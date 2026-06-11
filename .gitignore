@@ -1,0 +1,22 @@
+# Bỏ qua môi trường ảo
+# Bỏ qua môi trường ảo và thư viện
+venv/
+env/
+
+# Bỏ qua các file tạm và cache của Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Bỏ qua các cấu hình của Visual Studio Code
+.vscode/
+
+# Bỏ qua file rác hệ thống của Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Bỏ qua file rác hệ thống của macOS
+.DS_Store
+.AppleDouble
+.LSOverride
