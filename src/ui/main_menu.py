@@ -5,8 +5,10 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtGui import QPainter, QPixmap, QColor
 from PySide6.QtCore import Qt
 
-# Import file cấu hình theme vừa tạo
+# Import file cấu hình theme
 from src.utils import theme
+# Import file màn hình editor
+from src.ui.editor_window import EditorWindow
 
 class MainMenuWindow(QMainWindow):
     def __init__(self):
@@ -39,6 +41,8 @@ class MainMenuWindow(QMainWindow):
         self.btn_settings = self.create_button("🛠 CÀI ĐẶT HỆ THỐNG")
         self.btn_exit = self.create_button("🚪 THOÁT HỆ THỐNG")
 
+        # Gắn sự kiện các nút
+        self.btn_new.clicked.connect(self.open_editor)
         self.btn_exit.clicked.connect(self.close)
 
         layout.addWidget(self.btn_new, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -110,3 +114,10 @@ class MainMenuWindow(QMainWindow):
             }}
         """)
         return btn
+
+    def open_editor(self):
+        # Khởi tạo màn hình biên tập sa bàn số hóa
+        self.editor_win = EditorWindow()
+        self.editor_win.show()
+        # Ẩn tạm màn hình Menu chính đi
+        self.close()
