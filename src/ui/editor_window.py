@@ -3,7 +3,9 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QFrame, QLabel, QPushButton, QFileDialog, 
-                               QDialog, QLineEdit, QGraphicsView, QGraphicsScene, QMessageBox, QApplication)
+                               QDialog, QLineEdit, QGraphicsView, QGraphicsScene, 
+                               QMessageBox, QApplication, QStackedWidget, QButtonGroup,
+                               QScrollArea)
 from PySide6.QtGui import QPainter, QPixmap, QColor, QWheelEvent, QPen
 from PySide6.QtCore import Qt, QRectF
 from src.utils import theme
@@ -72,23 +74,14 @@ class InteractiveMapView(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag) 
         
-        if not self.is_projector:
-            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag) 
-        else:
-            self.setInteractive(False) 
-        
-        self.grid_size = 100 # Kích thước mặc định
-        
+        self.grid_size = 100 
         self.show_grid = False
         self.select_region_mode = False
         self.selection_start_pos = None
-        
-        self.manual_grid_mode = False
-        self.grid_start_pos = None
 
     def wheelEvent(self, event: QWheelEvent):
-        if self.is_projector: return 
         zoom_in_factor = 1.15
         zoom_out_factor = 1.0 / zoom_in_factor
         if event.angleDelta().y() > 0:
@@ -100,31 +93,18 @@ class InteractiveMapView(QGraphicsView):
     def mousePressEvent(self, event):
         if self.select_region_mode and event.button() == Qt.MouseButton.LeftButton:
             self.selection_start_pos = self.mapToScene(event.pos())
-        elif self.manual_grid_mode and event.button() == Qt.MouseButton.LeftButton:
-            self.grid_start_pos = self.mapToScene(event.pos())
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
-        # Xử lý cắt vùng trình chiếu
         if self.select_region_mode and event.button() == Qt.MouseButton.LeftButton and self.selection_start_pos:
             selection_end_pos = self.mapToScene(event.pos())
             rect = QRectF(self.selection_start_pos, selection_end_pos).normalized()
+            
             if rect.width() > 50 and rect.height() > 50:
                 if self.main_window:
                     self.main_window.set_projection_region(rect)
             self.selection_start_pos = None
-            
-        # Xử lý kéo vẽ ô lưới
-        elif self.manual_grid_mode and event.button() == Qt.MouseButton.LeftButton and self.grid_start_pos:
-            grid_end_pos = self.mapToScene(event.pos())
-            rect = QRectF(self.grid_start_pos, grid_end_pos).normalized()
-            # Lấy cạnh lớn nhất của khung quét làm kích thước ô vuông
-            size = int(max(rect.width(), rect.height()))
-            if size > 10: # Tránh trường hợp click nhầm tạo ô quá nhỏ gây treo máy
-                if self.main_window:
-                    self.main_window.apply_manual_grid(size)
-            self.grid_start_pos = None
 
     def drawForeground(self, painter, rect):
         super().drawForeground(painter, rect)
@@ -226,106 +206,211 @@ class EditorWindow(QMainWindow):
         main_layout.addWidget(top_bar)
 
         # =========================================================================
-        # 2. KHU VỰC TRUNG TÂM
+        # 2. KHU VỰC TRUNG TÂM (UI CANVA STYLE - 3 LỚP)
         # =========================================================================
         middle_widget = QWidget()
         middle_layout = QHBoxLayout(middle_widget)
         middle_layout.setContentsMargins(0, 0, 0, 0)
-        middle_layout.setSpacing(5)
+        middle_layout.setSpacing(0)
 
-        # --- A. CỘT TRÁI ---
-        left_sidebar = QFrame()
-        left_sidebar.setFixedWidth(240)
-        left_sidebar.setStyleSheet("background-color: #2c3e50; border-radius: 4px;")
-        left_layout = QVBoxLayout(left_sidebar)
-        left_layout.setContentsMargins(10, 10, 10, 10)
+        # --- LỚP 1: THANH MENU GỐC (FAR-LEFT BAR) ---
+        far_left_bar = QFrame()
+        far_left_bar.setFixedWidth(75)
+        far_left_bar.setStyleSheet("background-color: #1a2228; border-top-left-radius: 4px; border-bottom-left-radius: 4px;")
+        far_left_layout = QVBoxLayout(far_left_bar)
+        far_left_layout.setContentsMargins(5, 15, 5, 15)
+        far_left_layout.setSpacing(15)
+
+        self.main_tab_group = QButtonGroup(self)
         
-        lbl_tools_title = QLabel("📐 CÔNG CỤ BẢN ĐỒ")
-        lbl_tools_title.setStyleSheet("font-weight: bold; border-bottom: 1px solid #7f8c8d; padding-bottom: 5px;")
-        left_layout.addWidget(lbl_tools_title)
+        tab_btn_css = """
+            QPushButton { background-color: transparent; color: #bdc3c7; font-weight: bold; border-radius: 8px; padding: 10px 0px; font-size: 11px;}
+            QPushButton:hover { background-color: #2c3e50; color: white; }
+            QPushButton:checked { background-color: #2c3e50; color: #e67e22; }
+        """
 
-        self.btn_grid = QPushButton("🌐 Bật Lưới Tọa Độ")
+        self.btn_tab_map = QPushButton("🗺️\nBản đồ")
+        self.btn_tab_map.setCheckable(True)
+        self.btn_tab_map.setChecked(True)
+        self.btn_tab_map.setStyleSheet(tab_btn_css)
+        self.main_tab_group.addButton(self.btn_tab_map, 0)
+        far_left_layout.addWidget(self.btn_tab_map)
+
+        self.btn_tab_tools = QPushButton("🛠️\nCông cụ")
+        self.btn_tab_tools.setCheckable(True)
+        self.btn_tab_tools.setStyleSheet(tab_btn_css)
+        self.main_tab_group.addButton(self.btn_tab_tools, 1)
+        far_left_layout.addWidget(self.btn_tab_tools)
+
+        far_left_layout.addStretch()
+        middle_layout.addWidget(far_left_bar)
+
+        # --- LỚP 2: BẢNG DANH MỤC (SUB-PANEL BẰNG QStackedWidget) ---
+        self.sub_panel = QStackedWidget()
+        self.sub_panel.setFixedWidth(160)
+        self.sub_panel.setStyleSheet("background-color: #2c3e50; border-top-right-radius: 4px; border-bottom-right-radius: 4px;")
+        
+        self.main_tab_group.idClicked.connect(self.sub_panel.setCurrentIndex)
+
+        # [Trang 1 của Lớp 2]: Bản Đồ & Tọa Độ
+        page_map = QWidget()
+        page_map_layout = QVBoxLayout(page_map)
+        page_map_layout.setContentsMargins(10, 15, 10, 15)
+        page_map_layout.setSpacing(10)
+
+        btn_choose_map = QPushButton("📂 Tải bản đồ")
+        btn_choose_map.setFixedHeight(35)
+        btn_choose_map.setStyleSheet("QPushButton { background-color: #e67e22; color: white; font-weight: bold; border-radius: 4px; border: none; } QPushButton:hover { background-color: #d35400; }")
+        btn_choose_map.clicked.connect(self.choose_map_file)
+        page_map_layout.addWidget(btn_choose_map)
+        
+        self.lbl_map_path = QLabel("Chưa có bản đồ.")
+        self.lbl_map_path.setStyleSheet("color: #bdc3c7; font-style: italic; font-size: 11px;")
+        self.lbl_map_path.setWordWrap(True)
+        page_map_layout.addWidget(self.lbl_map_path)
+
+        line1 = QFrame(); line1.setFrameShape(QFrame.Shape.HLine); line1.setStyleSheet("color: #7f8c8d; margin: 5px 0;")
+        page_map_layout.addWidget(line1)
+
+        self.btn_grid = QPushButton("🌐 Bật Lưới")
         self.btn_grid.setCheckable(True)
-        self.btn_grid.setStyleSheet("""
-            QPushButton { background-color: #34495e; color: white; padding: 10px; font-weight: bold; border-radius: 4px; margin-top: 5px; }
-            QPushButton:checked { background-color: #0984e3; }
-        """)
+        self.btn_grid.setStyleSheet("QPushButton { background-color: #1e272e; color: white; padding: 10px; font-weight: bold; border-radius: 4px; border: none; } QPushButton:checked { background-color: #0984e3; }")
         self.btn_grid.clicked.connect(self.toggle_grid)
-        left_layout.addWidget(self.btn_grid)
+        page_map_layout.addWidget(self.btn_grid)
 
-        # THÊM NÚT KÉO VẼ LƯỚI
-        self.btn_manual_grid = QPushButton("🖱️ Kéo Vẽ Ô Lưới")
-        self.btn_manual_grid.setCheckable(True)
-        self.btn_manual_grid.setStyleSheet("""
-            QPushButton { background-color: #34495e; color: white; padding: 10px; font-weight: bold; border-radius: 4px; margin-top: 5px; }
-            QPushButton:checked { background-color: #8e44ad; }
-        """)
-        self.btn_manual_grid.clicked.connect(self.toggle_manual_grid)
-        left_layout.addWidget(self.btn_manual_grid)
-
-        self.btn_region = QPushButton("🎯 Chọn Vùng Trình Chiếu")
+        self.btn_region = QPushButton("🎯 Chọn Vùng")
         self.btn_region.setCheckable(True)
-        self.btn_region.setStyleSheet("""
-            QPushButton { background-color: #34495e; color: white; padding: 10px; font-weight: bold; border-radius: 4px; margin-top: 5px; }
-            QPushButton:checked { background-color: #e67e22; color: #111111;}
-        """)
+        self.btn_region.setStyleSheet("QPushButton { background-color: #1e272e; color: white; padding: 10px; font-weight: bold; border-radius: 4px; border: none; } QPushButton:checked { background-color: #c0392b; }")
         self.btn_region.clicked.connect(self.toggle_region_select)
-        left_layout.addWidget(self.btn_region)
+        page_map_layout.addWidget(self.btn_region)
         
-        lbl_placeholder1 = QLabel("\n[Khu vực Thêm Quân Ta/Địch]")
-        lbl_placeholder1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_placeholder1.setStyleSheet("color: #bdc3c7; font-style: italic;")
-        left_layout.addWidget(lbl_placeholder1)
-        left_layout.addStretch()
-        
-        middle_layout.addWidget(left_sidebar)
+        page_map_layout.addStretch()
+        self.sub_panel.addWidget(page_map)
 
-        # --- B. KHUNG NHÌN CHÍNH ---
+        # [Trang 2 của Lớp 2]: Công Cụ Thiết Kế
+        page_tools = QWidget()
+        page_tools_layout = QVBoxLayout(page_tools)
+        page_tools_layout.setContentsMargins(10, 15, 10, 15)
+        page_tools_layout.setSpacing(8)
+
+        self.tool_category_group = QButtonGroup(self)
+        self.tool_category_group.idClicked.connect(self.on_tool_category_changed)
+
+        tools_list = [
+            (0, "🖱️  Con trỏ"),
+            (1, "🖌️  Vẽ tự do"),
+            (2, "⬛  Hình học"),
+            (3, "➖  Đường kẻ"),
+            (4, "🇹  Văn bản")
+        ]
+
+        tool_btn_css = """
+            QPushButton { 
+                background-color: transparent; color: #f5f6fa; font-weight: bold; font-size: 13px;
+                text-align: left; padding: 10px 5px; border-radius: 6px; border: 1px solid transparent;
+            }
+            QPushButton:hover { background-color: #34495e; }
+            QPushButton:checked { background-color: #e67e22; color: #111111; }
+        """
+
+        for t_id, t_label in tools_list:
+            btn = QPushButton(t_label)
+            btn.setCheckable(True)
+            btn.setStyleSheet(tool_btn_css)
+            self.tool_category_group.addButton(btn, t_id)
+            page_tools_layout.addWidget(btn)
+            if t_id == 0: btn.setChecked(True)
+
+        page_tools_layout.addStretch()
+        self.sub_panel.addWidget(page_tools)
+
+        middle_layout.addWidget(self.sub_panel)
+        middle_layout.addSpacing(5) 
+
+        # --- B. KHUNG NHÌN CHÍNH (CENTER WORKSPACE) ---
         self.center_workspace = QFrame()
-        self.center_workspace.setStyleSheet("background-color: #111111; border: 2px dashed #34495e; border-radius: 4px;")
+        # 1. ĐÃ XÓA nét đứt (dashed) ở viền khung hiển thị chính, thay bằng border: none
+        self.center_workspace.setStyleSheet("background-color: #111111; border: none; border-radius: 4px;")
         self.center_layout = QVBoxLayout(self.center_workspace)
         self.center_layout.setContentsMargins(0, 0, 0, 0)
         
+        self.scene = QGraphicsScene()
         self.view = InteractiveMapView(self.scene, main_window=self)
         self.view.hide() 
         self.center_layout.addWidget(self.view)
         
-        self.lbl_main_map_placeholder = QLabel("🗺️ KHÔNG GIAN HIỂN THỊ BẢN ĐỒ & SA BÀN CHÍNH\n(Vui lòng chọn hình ảnh bản đồ ở cột bên phải để bắt đầu)")
+        self.lbl_main_map_placeholder = QLabel("🗺️ KHÔNG GIAN HIỂN THỊ BẢN ĐỒ & SA BÀN CHÍNH\n(Mở ngăn 'Bản đồ' ở cột trái để tải ảnh lên)")
         self.lbl_main_map_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_main_map_placeholder.setStyleSheet("font-size: 16px; color: #7f8c8d; font-weight: bold;")
         self.center_layout.addWidget(self.lbl_main_map_placeholder)
+
+        # --- LỚP 3: BẢNG NỔI CHỨA HÌNH HỌC (FLOATING OVERLAY) ---
+        self.floating_panel = QFrame(self.center_workspace)
+        self.floating_panel.setFixedWidth(60)
+        self.floating_panel.setFixedHeight(300)
+        self.floating_panel.setStyleSheet("""
+            QFrame {
+                background-color: #2c3e50; 
+                border-radius: 8px; 
+                border: 1px solid #1a2228;
+            }
+        """)
+        
+        float_layout = QVBoxLayout(self.floating_panel)
+        float_layout.setContentsMargins(0, 5, 0, 5)
+        
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("QScrollArea { border: none; background-color: transparent; } QScrollBar:vertical { width: 0px; }")
+        
+        scroll_content = QWidget()
+        scroll_content.setStyleSheet("background-color: transparent;")
+        scroll_content_layout = QVBoxLayout(scroll_content)
+        scroll_content_layout.setContentsMargins(10, 5, 10, 5)
+        scroll_content_layout.setSpacing(10)
+        
+        shapes = [
+            ("□", "rect"), ("○", "ellipse"), ("△", "triangle"), 
+            ("◇", "diamond"), ("⬠", "pentagon"), ("⬡", "hexagon"), 
+            ("☆", "star")
+        ]
+        
+        for icon, s_id in shapes:
+            btn = QPushButton(icon)
+            btn.setFixedSize(40, 40)
+            btn.setStyleSheet("""
+                QPushButton { background-color: transparent; color: white; font-size: 22px; border-radius: 4px; } 
+                QPushButton:hover { background-color: #34495e; } 
+                QPushButton:pressed { background-color: #e67e22; color: #111111; }
+            """)
+            scroll_content_layout.addWidget(btn)
+            
+        scroll_content_layout.addStretch()
+        scroll_area.setWidget(scroll_content)
+        float_layout.addWidget(scroll_area)
+        
+        self.floating_panel.move(10, 10) 
+        self.floating_panel.hide() 
         
         middle_layout.addWidget(self.center_workspace, stretch=1)
 
-        # --- C. CỘT PHẢI ---
+        # --- C. CỘT PHẢI (THUỘC TÍNH CHI TIẾT ĐỘNG) ---
         right_panel = QFrame()
         right_panel.setFixedWidth(240)
         right_panel.setStyleSheet("background-color: #2c3e50; border-radius: 4px;")
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(10, 10, 10, 10)
+        right_layout.setContentsMargins(15, 15, 15, 15)
         
-        lbl_right_title = QLabel("⚙️ QUẢN LÝ BẢN ĐỒ")
-        lbl_right_title.setStyleSheet("font-weight: bold; border-bottom: 1px solid #7f8c8d; padding-bottom: 5px;")
+        lbl_right_title = QLabel("⚙️ THUỘC TÍNH ĐỐI TƯỢNG")
+        lbl_right_title.setStyleSheet("font-weight: bold; border-bottom: 1px solid #7f8c8d; padding-bottom: 10px; color: #f1c40f;")
         right_layout.addWidget(lbl_right_title)
 
-        btn_choose_map = QPushButton("📂 Chọn bản đồ")
-        btn_choose_map.setFixedHeight(40)
-        btn_choose_map.setStyleSheet("""
-            QPushButton { background-color: #e67e22; color: white; font-size: 14px; font-weight: bold; border-radius: 4px; border: none; margin-top: 10px; }
-            QPushButton:hover { background-color: #d35400; }
-        """)
-        btn_choose_map.clicked.connect(self.choose_map_file)
-        right_layout.addWidget(btn_choose_map)
+        lbl_properties_hint = QLabel("\n\n\n\n\nChưa có đối tượng nào được chọn.\n\n(Bảng này sẽ hiện thông số khi bạn bấm chọn một hình vẽ hoặc xe tăng)")
+        lbl_properties_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_properties_hint.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 12px;")
+        lbl_properties_hint.setWordWrap(True)
+        right_layout.addWidget(lbl_properties_hint)
         
-        self.lbl_map_path = QLabel("Chưa có bản đồ nào được chọn.")
-        self.lbl_map_path.setStyleSheet("color: #bdc3c7; font-style: italic; font-size: 11px;")
-        self.lbl_map_path.setWordWrap(True)
-        right_layout.addWidget(self.lbl_map_path)
-        
-        lbl_placeholder2 = QLabel("\n\n[Thông số đối tượng]")
-        lbl_placeholder2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_placeholder2.setStyleSheet("color: #bdc3c7; font-style: italic;")
-        right_layout.addWidget(lbl_placeholder2)
         right_layout.addStretch()
         
         middle_layout.addWidget(right_panel)
@@ -348,50 +433,24 @@ class EditorWindow(QMainWindow):
         main_layout.addWidget(bottom_panel)
         self.setCentralWidget(main_widget)
 
-    # --- CÁC HÀM XỬ LÝ LƯỚI VÀ CHỌN VÙNG TRÌNH CHIẾU ---
+    # --- CÁC HÀM XỬ LÝ SỰ KIỆN GIAO DIỆN ---
+    def on_tool_category_changed(self, tool_id):
+        if tool_id == 2: 
+            self.floating_panel.show()
+            self.floating_panel.raise_() 
+        else:
+            self.floating_panel.hide()
 
+    # --- CÁC HÀM XỬ LÝ LƯỚI VÀ CHỌN VÙNG TRÌNH CHIẾU ---
     def toggle_grid(self, checked):
         self.view.show_grid = checked
         self.display_win.view.show_grid = checked
         self.btn_grid.setText("🌐 Tắt Lưới Tọa Độ" if checked else "🌐 Bật Lưới Tọa Độ")
         self.scene.update() 
 
-    def toggle_manual_grid(self, checked):
-        self.view.manual_grid_mode = checked
-        if checked:
-            # Tắt chế độ Chọn vùng trình chiếu nếu đang bật để tránh xung đột
-            self.btn_region.setChecked(False)
-            self.toggle_region_select(False)
-            
-            self.btn_manual_grid.setText("🖱️ Hủy Vẽ Ô Lưới")
-            self.view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
-            QMessageBox.information(self, "Thiết lập Kích thước Lưới", "Hãy nhấn giữ chuột TRÁI trên bản đồ và kéo thành một hình vuông. Kích thước hình vuông bạn vừa kéo sẽ trở thành kích thước mới cho tất cả các ô lưới!")
-        else:
-            self.btn_manual_grid.setText("🖱️ Kéo Vẽ Ô Lưới")
-            self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-
-    def apply_manual_grid(self, size):
-        """Áp dụng kích thước ô lưới mới người dùng vừa vẽ"""
-        self.view.grid_size = size
-        self.display_win.view.grid_size = size
-        
-        # Tự động bật lưới lên nếu trước đó đang tắt để người dùng thấy kết quả ngay
-        if not self.view.show_grid:
-            self.btn_grid.setChecked(True)
-            self.toggle_grid(True)
-        else:
-            self.scene.update()
-            
-        # Trả lại chế độ kéo thả bản đồ bình thường
-        self.btn_manual_grid.setChecked(False)
-        self.toggle_manual_grid(False)
-
     def toggle_region_select(self, checked):
         self.view.select_region_mode = checked
         if checked:
-            self.btn_manual_grid.setChecked(False)
-            self.toggle_manual_grid(False)
-            
             self.btn_region.setText("🎯 Hủy Chọn")
             self.view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
             QMessageBox.information(self, "Hướng dẫn", "Hãy dùng chuột TRÁI, nhấn giữ và kéo một vùng hình chữ nhật để thiết lập khu vực sẽ chiếu lên màn hình lớn.")
@@ -401,14 +460,12 @@ class EditorWindow(QMainWindow):
 
     def set_projection_region(self, rect):
         if not self.current_pixmap: return
-
         reply = QMessageBox.question(self, 'Xác nhận Vùng Trình Chiếu', 
-                                     'Thiết lập đây là khu vực duy nhất sẽ hiển thị trên máy chiếu?',
+                                     'Thiết lập đây là khu vực duy nhất sẽ hiển thị trên máy chiếu (Các phần viền đen sẽ bị ẩn)?',
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if reply == QMessageBox.StandardButton.Yes:
             self.projection_rect = rect.toRect().intersected(self.current_pixmap.rect())
-            
             if self.projection_frame_item in self.scene.items():
                 self.scene.removeItem(self.projection_frame_item)
             
@@ -416,7 +473,8 @@ class EditorWindow(QMainWindow):
             self.projection_frame_item = QGraphicsRectItem(self.projection_rect)
             pen = QPen(QColor(230, 126, 34)) 
             pen.setWidth(4)
-            pen.setStyle(Qt.PenStyle.DashLine)
+            # 2. ĐÃ ĐỔI: Thay Qt.PenStyle.DashLine thành SolidLine cho khung chọn hiển thị
+            pen.setStyle(Qt.PenStyle.SolidLine) 
             self.projection_frame_item.setPen(pen)
             self.projection_frame_item.setZValue(9999) 
             self.scene.addItem(self.projection_frame_item)
@@ -438,19 +496,15 @@ class EditorWindow(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(self, "Chọn file ảnh bản đồ", "", "Image Files (*.png *.jpg *.jpeg)")
         if file_path and os.path.exists(file_path):
             self.lbl_map_path.setText(f"File: {os.path.basename(file_path)}")
-            
             self.current_pixmap = QPixmap(file_path)
             self.scene.clear() 
             self.scene.addPixmap(self.current_pixmap)
             self.scene.setSceneRect(self.current_pixmap.rect())
-            
             self.projection_rect = None
             self.projection_frame_item = None
-            
             self.lbl_main_map_placeholder.hide()
             self.view.show()
             self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-            self.display_win.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def close_all(self):
         self.display_win.close()
