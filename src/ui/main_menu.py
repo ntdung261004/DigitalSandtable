@@ -5,17 +5,16 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtGui import QPainter, QPixmap, QColor
 from PySide6.QtCore import Qt
 
-# Import file cấu hình theme
 from src.utils import theme
-# Import file màn hình editor
 from src.ui.editor_window import EditorWindow
 
 class MainMenuWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Hệ Thống Sa Bàn Tác Chiến Điện Tử")
+        # Ép Full Screen ngay từ bên trong Menu
+        self.showFullScreen()
         
-        # Tạo widget trung tâm trong suốt để lộ hình nền phía dưới
         central_widget = QWidget()
         central_widget.setStyleSheet("background: transparent;")
         
@@ -41,7 +40,6 @@ class MainMenuWindow(QMainWindow):
         self.btn_settings = self.create_button("🛠 CÀI ĐẶT HỆ THỐNG")
         self.btn_exit = self.create_button("🚪 THOÁT HỆ THỐNG")
 
-        # Gắn sự kiện các nút
         self.btn_new.clicked.connect(self.open_editor)
         self.btn_exit.clicked.connect(self.close)
 
@@ -56,33 +54,25 @@ class MainMenuWindow(QMainWindow):
 
         self.setCentralWidget(central_widget)
 
-        # --- TẢI ẢNH NỀN VÀO BỘ NHỚ ---
         self.bg_pixmap = None
         if os.path.exists(theme.BG_IMAGE_PATH):
             self.bg_pixmap = QPixmap(theme.BG_IMAGE_PATH)
 
     def paintEvent(self, event):
-        """Hàm này tự động chạy để vẽ nền mỗi khi cửa sổ thay đổi kích thước"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 1. Vẽ màu nền chủ đạo (Màu tối)
         rect = self.rect()
         painter.fillRect(rect, QColor(theme.MAIN_BG_COLOR))
 
-        # 2. Phủ ảnh nền chìm lên trên
         if self.bg_pixmap and not self.bg_pixmap.isNull():
-            # Thiết lập độ mờ cho nét cọ
             painter.setOpacity(theme.BG_IMAGE_OPACITY)
-            
-            # Cắt/phóng to ảnh sao cho phủ kín màn hình mượt mà
             scaled_pixmap = self.bg_pixmap.scaled(
                 rect.size(), 
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding, 
                 Qt.TransformationMode.SmoothTransformation
             )
             
-            # Căn giữa ảnh nền
             x = (rect.width() - scaled_pixmap.width()) // 2
             y = (rect.height() - scaled_pixmap.height()) // 2
             
@@ -94,7 +84,6 @@ class MainMenuWindow(QMainWindow):
         btn = QPushButton(text)
         btn.setFixedSize(theme.BTN_WIDTH, theme.BTN_HEIGHT)
         
-        # Chèn các biến theme vào file CSS của nút
         btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {theme.BTN_BG_COLOR};
@@ -116,8 +105,6 @@ class MainMenuWindow(QMainWindow):
         return btn
 
     def open_editor(self):
-        # Khởi tạo màn hình biên tập sa bàn số hóa
         self.editor_win = EditorWindow()
         self.editor_win.show()
-        # Ẩn tạm màn hình Menu chính đi
         self.close()

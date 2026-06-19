@@ -8,7 +8,7 @@ def main():
     
     main_menu = MainMenuWindow()
     # Mở cửa sổ phóng to tối đa nhưng vẫn giữ thanh tiêu đề và Taskbar Windows
-    main_menu.showMaximized()
+    main_menu.showFullScreen()
     
     sys.exit(app.exec())
 
